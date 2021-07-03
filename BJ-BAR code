@@ -1,0 +1,65 @@
+cd_BAR =  function(y, x, lambda, max.iter = 100, eps = 1e-8)
+{
+  n =  length(y)
+  p =  ncol(x)
+  
+  # standardize
+  u =  y - mean(y) #scale(y,scale=F)
+  z =  t(t(x) - apply(x, 2, mean))
+  norm.z =  apply(z^2, 2, mean)
+  z =  t(t(z)/sqrt(norm.z)) #scale(x)
+  
+  # initialize beta
+  init = rep(1,p)
+  beta = init
+  
+  # residual 
+  resid =  (u - z %*% beta)
+  
+  # start update
+  for (t in 1:max.iter)
+  {
+    new.beta =  beta
+    for (j in 1:p)                                  
+    {
+      zj = crossprod(z[,j], resid)/n + beta[j]     
+      new.beta[j] = ST.BAR(zj, lambda, n)         
+      resid =  resid - z[,j] * (new.beta[j] - beta[j]) 
+    }     
+    if (max(abs(beta - new.beta)) < eps) break
+    beta =  new.beta
+  }
+  
+  # transform back
+  return(beta / sqrt(norm.z))
+}
+
+
+# BJ with BAR
+bjBAR = function(dt, lam2=lam2, tol1 = 1e-3, max.iter1 = 100) {
+  Y = dt$y; delta = dt$delta; x = as.matrix(dt[,-c(1,2)])
+  old.beta1 = lm(log(Y) ~ x)$coef[-1]
+  
+  err1 = 10; iter1 = 0
+  while (max.iter1 > iter1 & err1 > tol1) {
+    xbeta1 = c(x%*%old.beta1)
+    e = log(Y) - xbeta1
+    es = sort(e)
+    sfit = survfit(Surv(e, delta) ~ 1) #KM estimator, plot(sfit)
+    Fhat = 1-approx(x=sfit$time, y=sfit$surv, xout=es)$y 
+    dF = diff(c(0,Fhat))
+    num = rev(cumsum(rev(es*dF)))
+    denom = 1-Fhat # rev(cumsum(rev(dF)))
+    Yimp = (num/pmax(tol1,denom))[rank(e)] +xbeta1
+    Yhat = delta*log(Y) + (1-delta)*Yimp
+    
+    ###BAR
+    new.beta2 <- cd_BAR(Yhat, x, lambda = lam2)
+    new.beta1 = new.beta2
+    err1 = max(abs(new.beta1 - old.beta1))
+    iter1 = iter1 + 1
+    old.beta1 = new.beta1
+  }
+  list(coef = round(new.beta1,3), Yhat=Yhat,
+       iter1 = iter1, MSE=sum((Yhat-x%*%new.beta1)^2)/n)
+}
