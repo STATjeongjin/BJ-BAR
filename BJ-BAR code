@@ -1,3 +1,4 @@
+# Broken adaptive ridge regression via coordinate descent algorithms 
 cd_BAR =  function(y, x, lambda, max.iter = 100, eps = 1e-8)
 {
   n =  length(y)
@@ -35,7 +36,33 @@ cd_BAR =  function(y, x, lambda, max.iter = 100, eps = 1e-8)
 }
 
 
-# BJ with BAR
+# Buckley-James estimator
+bjaft = function(dt, tol = 1e-3, max.iter = 100) {
+  Y = dt$y; delta = dt$delta; x = as.matrix(dt[,-c(1,2)])
+  old.beta = lm(log(Y) ~ x)$coef[-1]
+  
+  err = 10; iter = 0
+  while (max.iter > iter & err > tol) {
+    xbeta = c(x%*%old.beta)
+    e = log(Y) - xbeta
+    es = sort(e)
+    sfit = survfit(Surv(e, delta) ~ 1)
+    Fhat = 1-approx(x=sfit$time, y=sfit$surv, xout=es)$y
+    dF = diff(c(0,Fhat))
+    denom = 1-Fhat # rev(cumsum(rev(dF)))
+    num = rev(cumsum(rev(es*dF)))
+    Yimp = (num/pmax(tol,denom))[rank(e)] +xbeta
+    Yhat = log(Y)*delta + (1-delta)*Yimp
+    
+    new.beta = lm(Yhat ~ x)$coef[-1]
+    err = max(abs(new.beta - old.beta))
+    iter = iter + 1
+    old.beta = new.beta
+  }
+  list(coef = round(new.beta,3), iter = iter, Yhat=Yhat)
+}
+
+# BJ-BAR
 bjBAR = function(dt, lam2=lam2, tol1 = 1e-3, max.iter1 = 100) {
   Y = dt$y; delta = dt$delta; x = as.matrix(dt[,-c(1,2)])
   old.beta1 = lm(log(Y) ~ x)$coef[-1]
@@ -55,6 +82,8 @@ bjBAR = function(dt, lam2=lam2, tol1 = 1e-3, max.iter1 = 100) {
     
     ###BAR
     new.beta2 <- cd_BAR(Yhat, x, lambda = lam2)
+    ###
+    
     new.beta1 = new.beta2
     err1 = max(abs(new.beta1 - old.beta1))
     iter1 = iter1 + 1
@@ -63,3 +92,26 @@ bjBAR = function(dt, lam2=lam2, tol1 = 1e-3, max.iter1 = 100) {
   list(coef = round(new.beta1,3), Yhat=Yhat,
        iter1 = iter1, MSE=sum((Yhat-x%*%new.beta1)^2)/n)
 }
+
+#BJBAR-BIC -> iterative algorithm
+temp <- c()
+lambda <- seq(1, 10, by = 1)
+for(i in 1:length(lambda)){
+  temp[i] <- log(bjBAR(dt,lambda[i])$MSE)+
+    sum(abs(bjBAR(dt,lambda[i])$coef)>0)*log(n)/n
+}
+plot(lambda,temp)
+lambda[which.min(temp)]
+bjBAR(dt,lam2=lambda[which.min(temp)])$coef 
+
+#BJBAR-BIC -> direct algorithm
+temp <- c()
+lambda <- seq(1, 10, by = 1)
+for(i in 1:length(lambda)){
+  beta.new = round(cd_BAR(bjaft(dt)$Yhat, x, lambda = lambda[i]),3)
+  temp[i] <- log(sum((bjaft(dt)$Yhat-x%*%beta.new)^2/n))+ sum(abs(beta.new)>0)*log(n)/n
+}
+plot(lambda,temp)
+lambda[which.min(temp)]
+round(cd_BAR(bjaft(dt)$Yhat, x, lambda = lambda[which.min(temp)]),3)
+
