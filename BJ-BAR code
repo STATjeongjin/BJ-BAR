@@ -1,4 +1,9 @@
 # Broken adaptive ridge regression via coordinate descent algorithms 
+ST.BAR <- function(beta, lambda, n) {
+  ifelse(beta > 2*sqrt(lambda/n), beta/2+sqrt(beta^2/4-lambda/n),
+         ifelse(beta < (-2*sqrt(lambda/n)),beta/2-sqrt(beta^2/4-lambda/n),0))
+}
+
 cd_BAR =  function(y, x, lambda, max.iter = 100, eps = 1e-8)
 {
   n =  length(y)
@@ -62,49 +67,8 @@ bjaft = function(dt, tol = 1e-3, max.iter = 100) {
   list(coef = round(new.beta,3), iter = iter, Yhat=Yhat)
 }
 
-# BJ-BAR
-bjBAR = function(dt, lam2=lam2, tol1 = 1e-3, max.iter1 = 100) {
-  Y = dt$y; delta = dt$delta; x = as.matrix(dt[,-c(1,2)])
-  old.beta1 = lm(log(Y) ~ x)$coef[-1]
-  
-  err1 = 10; iter1 = 0
-  while (max.iter1 > iter1 & err1 > tol1) {
-    xbeta1 = c(x%*%old.beta1)
-    e = log(Y) - xbeta1
-    es = sort(e)
-    sfit = survfit(Surv(e, delta) ~ 1) #KM estimator, plot(sfit)
-    Fhat = 1-approx(x=sfit$time, y=sfit$surv, xout=es)$y 
-    dF = diff(c(0,Fhat))
-    num = rev(cumsum(rev(es*dF)))
-    denom = 1-Fhat # rev(cumsum(rev(dF)))
-    Yimp = (num/pmax(tol1,denom))[rank(e)] +xbeta1
-    Yhat = delta*log(Y) + (1-delta)*Yimp
-    
-    ###BAR
-    new.beta2 <- cd_BAR(Yhat, x, lambda = lam2)
-    ###
-    
-    new.beta1 = new.beta2
-    err1 = max(abs(new.beta1 - old.beta1))
-    iter1 = iter1 + 1
-    old.beta1 = new.beta1
-  }
-  list(coef = round(new.beta1,3), Yhat=Yhat,
-       iter1 = iter1, MSE=sum((Yhat-x%*%new.beta1)^2)/n)
-}
-
-#BJBAR-BIC -> iterative algorithm
-temp <- c()
-lambda <- seq(1, 10, by = 1)
-for(i in 1:length(lambda)){
-  temp[i] <- log(bjBAR(dt,lambda[i])$MSE)+
-    sum(abs(bjBAR(dt,lambda[i])$coef)>0)*log(n)/n
-}
-plot(lambda,temp)
-lambda[which.min(temp)]
-bjBAR(dt,lam2=lambda[which.min(temp)])$coef 
-
-#BJBAR-BIC -> direct algorithm
+# BJ-BAR (Buckley-James imputation + Broken adaptive ridge regression)
+# Tuned by BIC
 temp <- c()
 lambda <- seq(1, 10, by = 1)
 for(i in 1:length(lambda)){
@@ -113,5 +77,5 @@ for(i in 1:length(lambda)){
 }
 plot(lambda,temp)
 lambda[which.min(temp)]
-round(cd_BAR(bjaft(dt)$Yhat, x, lambda = lambda[which.min(temp)]),3)
+cd_BAR(bjaft(dt)$Yhat, x, lambda = lambda[which.min(temp)])
 
